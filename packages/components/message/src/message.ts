@@ -47,6 +47,7 @@ export interface MessageConfigContext {
   showClose?: boolean
   plain?: boolean
   placement?: string
+  appendTo?: string | HTMLElement
 }
 
 export const messageDefaults = mutable({

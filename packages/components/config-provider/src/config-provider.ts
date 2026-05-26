@@ -1,4 +1,4 @@
-import { defineComponent, renderSlot, watch } from 'vue'
+import { defineComponent, renderSlot, unref, watch } from 'vue'
 import { provideGlobalConfig } from './hooks/use-global-config'
 import { configProviderProps } from './config-provider-props'
 
@@ -7,6 +7,10 @@ import type { MessageConfigContext } from '@element-plus/components/message'
 export const messageConfig: MessageConfigContext = {
   placement: 'top',
 }
+
+export const messageBoxConfig: {
+  appendTo?: string | HTMLElement
+} = {}
 
 const ConfigProvider = defineComponent({
   name: 'ElConfigProvider',
@@ -20,6 +24,16 @@ const ConfigProvider = defineComponent({
         Object.assign(messageConfig, config?.value?.message ?? {}, val ?? {})
       },
       { immediate: true, deep: true }
+    )
+
+    watch(
+      () => props.appendTo,
+      (val) => {
+        const appendTo = unref(val as any) as string | HTMLElement | undefined
+        messageConfig.appendTo = appendTo
+        messageBoxConfig.appendTo = appendTo
+      },
+      { immediate: true }
     )
     return () => renderSlot(slots, 'default', { config: config?.value })
   },

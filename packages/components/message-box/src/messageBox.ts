@@ -1,4 +1,4 @@
-import { createVNode, isVNode, markRaw, render } from 'vue'
+import { createVNode, isVNode, markRaw, render, unref } from 'vue'
 import {
   debugWarn,
   hasOwn,
@@ -10,6 +10,11 @@ import {
   isUndefined,
 } from '@element-plus/utils'
 import MessageBoxConstructor from './index.vue'
+import {
+  configProviderContextKey,
+  messageBoxConfig,
+  useGlobalConfig,
+} from '@element-plus/components/config-provider'
 
 import type { AppContext, ComponentPublicInstance, VNode } from 'vue'
 import type {
@@ -34,14 +39,26 @@ const messageInstance = new Map<
   }
 >()
 
-const getAppendToElement = (props: any): HTMLElement => {
+const globalConfig = useGlobalConfig()
+
+const getAppendToElement = (
+  props: any,
+  appContext?: AppContext | null
+): HTMLElement => {
+  const config = appContext?.provides?.[configProviderContextKey as symbol]
+  const appendToOption =
+    unref(config)?.appendTo ??
+    messageBoxConfig.appendTo ??
+    globalConfig.value?.appendTo ??
+    props.appendTo
+
   let appendTo: HTMLElement | null = document.body
-  if (props.appendTo) {
-    if (isString(props.appendTo)) {
-      appendTo = document.querySelector<HTMLElement>(props.appendTo)
+  if (appendToOption) {
+    if (isString(appendToOption)) {
+      appendTo = document.querySelector<HTMLElement>(appendToOption)
     }
-    if (isElement(props.appendTo)) {
-      appendTo = props.appendTo
+    if (isElement(appendToOption)) {
+      appendTo = appendToOption as any
     }
 
     // should fallback to default value with a warning
@@ -74,7 +91,9 @@ const initInstance = (
   )
   vnode.appContext = appContext
   render(vnode, container)
-  getAppendToElement(props).appendChild(container.firstElementChild!)
+  getAppendToElement(props, appContext).appendChild(
+    container.firstElementChild!
+  )
   return vnode.component
 }
 

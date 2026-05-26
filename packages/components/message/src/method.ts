@@ -1,4 +1,4 @@
-import { createVNode, isVNode, render } from 'vue'
+import { createVNode, isVNode, render, unref } from 'vue'
 import {
   debugWarn,
   hasOwn,
@@ -9,7 +9,11 @@ import {
   isNumber,
   isString,
 } from '@element-plus/utils'
-import { messageConfig } from '@element-plus/components/config-provider'
+import {
+  configProviderContextKey,
+  messageConfig,
+  useGlobalConfig,
+} from '@element-plus/components/config-provider'
 import MessageConstructor from './message.vue'
 import {
   MESSAGE_DEFAULT_PLACEMENT,
@@ -36,21 +40,34 @@ let seed = 1
 
 // TODO: Since Notify.ts is basically the same like this file. So we could do some encapsulation against them to reduce code duplication.
 
-const normalizeAppendTo = (normalized: MessageOptions) => {
-  const appendTo = normalized.appendTo
+const globalConfig = useGlobalConfig()
+
+const normalizeAppendTo = (
+  normalized: MessageOptions,
+  context?: AppContext | null
+) => {
+  const config = context?.provides?.[configProviderContextKey as symbol]
+  const appendTo =
+    unref(config)?.appendTo ??
+    messageConfig.appendTo ??
+    globalConfig.value?.appendTo ??
+    normalized.appendTo
+
   if (!appendTo) {
     normalized.appendTo = document.body
-  } else if (isString(normalized.appendTo)) {
-    let appendTo = document.querySelector<HTMLElement>(normalized.appendTo)
+  } else if (isString(appendTo)) {
+    let appendToEl = document.querySelector<HTMLElement>(appendTo)
 
     // should fallback to default value with a warning
-    if (!isElement(appendTo)) {
+    if (!isElement(appendToEl)) {
       debugWarn(
         'ElMessage',
         'the appendTo option is not an HTMLElement. Falling back to document.body.'
       )
-      appendTo = document.body
+      appendToEl = document.body
     }
+    normalized.appendTo = appendToEl
+  } else {
     normalized.appendTo = appendTo
   }
 }
@@ -80,7 +97,10 @@ const normalizePlacement = (normalized: MessageOptions) => {
   }
 }
 
-const normalizeOptions = (params?: MessageParams) => {
+const normalizeOptions = (
+  params?: MessageParams,
+  context?: AppContext | null
+) => {
   const options: MessageOptions =
     !params || isString(params) || isVNode(params) || isFunction(params)
       ? { message: params }
@@ -91,7 +111,7 @@ const normalizeOptions = (params?: MessageParams) => {
     ...options,
   }
 
-  normalizeAppendTo(normalized)
+  normalizeAppendTo(normalized, context)
   normalizePlacement(normalized)
 
   // When grouping is configured globally,
@@ -159,10 +179,10 @@ const createMessage = (
     props,
     isFunction(props.message) || isVNode(props.message)
       ? {
-          default: isFunction(props.message)
-            ? props.message
-            : () => props.message,
-        }
+        default: isFunction(props.message)
+          ? props.message
+          : () => props.message,
+      }
       : null
   )
   vnode.appContext = context || message._context
@@ -194,40 +214,40 @@ const createMessage = (
 
 const message: MessageFn &
   Partial<Message> & { _context: AppContext | null } = (
-  options = {},
-  context
-) => {
-  if (!isClient) return { close: () => undefined }
+    options = {},
+    context
+  ) => {
+    if (!isClient) return { close: () => undefined }
 
-  const normalized = normalizeOptions(options)
-  const instances = getOrCreatePlacementInstances(
-    normalized.placement || MESSAGE_DEFAULT_PLACEMENT
-  )
-
-  if (normalized.grouping && instances.length) {
-    const instance = instances.find(
-      ({ vnode: vm }) => vm.props?.message === normalized.message
+    const normalized = normalizeOptions(options, context)
+    const instances = getOrCreatePlacementInstances(
+      normalized.placement || MESSAGE_DEFAULT_PLACEMENT
     )
-    if (instance) {
-      instance.props.repeatNum += 1
-      instance.props.type = normalized.type
-      return instance.handler
+
+    if (normalized.grouping && instances.length) {
+      const instance = instances.find(
+        ({ vnode: vm }) => vm.props?.message === normalized.message
+      )
+      if (instance) {
+        instance.props.repeatNum += 1
+        instance.props.type = normalized.type
+        return instance.handler
+      }
     }
+
+    if (isNumber(messageConfig.max) && instances.length >= messageConfig.max) {
+      return { close: () => undefined }
+    }
+
+    const instance = createMessage(normalized, context)
+
+    instances.push(instance)
+    return instance.handler
   }
-
-  if (isNumber(messageConfig.max) && instances.length >= messageConfig.max) {
-    return { close: () => undefined }
-  }
-
-  const instance = createMessage(normalized, context)
-
-  instances.push(instance)
-  return instance.handler
-}
 
 messageTypes.forEach((type) => {
   message[type] = (options = {}, appContext) => {
-    const normalized = normalizeOptions(options)
+    const normalized = normalizeOptions(options, appContext)
     return message({ ...normalized, type }, appContext)
   }
 })
